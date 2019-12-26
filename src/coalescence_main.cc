@@ -22,7 +22,7 @@ void usage(const int rc, const std::string &progname) {
 };  // unnamed namespace
 
 int main(int argc, char **argv) {
-  std::string output_file;
+  std::string output_file("nuclei.bin");
   std::vector<std::string> input_files;
 
   constexpr option longopts[] = {
@@ -46,6 +46,7 @@ int main(int argc, char **argv) {
         {
           // A little hack from
           // stackoverflow.com/questions/3939157/c-getopt-multiple-value
+          // to treat multiple arguments
           optind--;
           for( ;optind < argc && *argv[optind] != '-'; optind++){
             std::string s(argv[optind]);
@@ -54,7 +55,7 @@ int main(int argc, char **argv) {
          break;
         }
       case 'o':
-        output_file = optarg;
+        if (optarg) { output_file = optarg; }
         break;
      default:
         usage(EXIT_FAILURE, progname);
@@ -67,9 +68,9 @@ int main(int argc, char **argv) {
     usage(EXIT_FAILURE, progname);
   }
 
-
+  std::cout << "Input files: ";
   for (const std::string &s : input_files) {
-    std::cout << s << std::endl;
+    std::cout << s << " ";
   }
-  std::cout << "Output file: " << output_file << std::endl;
+  std::cout << "\nOutput file: " << output_file << std::endl;
 }
