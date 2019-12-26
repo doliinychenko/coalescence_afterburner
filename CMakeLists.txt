@@ -7,7 +7,7 @@ execute_process(COMMAND git clone  https://github.com/smash-transport/smash.git
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 set(SOURCE_FILES
-#    src/coalescence.cc
+    src/coalescence.cc
 
     smash/src/pdgcode.cc
     smash/src/threevector.cc

@@ -2,6 +2,8 @@
 
 #include "smash/stringfunctions.h"
 
+#include "coalescence/coalescence.h"
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -22,7 +24,8 @@ void usage(const int rc, const std::string &progname) {
 };  // unnamed namespace
 
 int main(int argc, char **argv) {
-  std::string output_file("nuclei.bin");
+  using namespace coalescence;
+  std::string output_file("nuclei.dat");
   std::vector<std::string> input_files;
 
   constexpr option longopts[] = {
@@ -69,8 +72,13 @@ int main(int argc, char **argv) {
   }
 
   std::cout << "Input files: ";
-  for (const std::string &s : input_files) {
-    std::cout << s << " ";
+  for (const std::string &input_file : input_files) {
+    std::cout << input_file << " ";
   }
   std::cout << "\nOutput file: " << output_file << std::endl;
+
+  Coalescence coalescence(output_file);
+  for (const std::string &input_file : input_files) {
+    coalescence.make_nuclei(input_file);
+  }
 }
