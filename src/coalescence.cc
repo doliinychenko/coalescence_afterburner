@@ -13,6 +13,8 @@ Coalescence::Coalescence(const std::string output_file) {
   if (output_ == NULL) {
     throw std::runtime_error("Can't open file " + output_file);
   }
+  // Initialize random number generator
+  rng_generator_.seed(this->random_device_());
 }
 
 Coalescence::~Coalescence() {
@@ -143,8 +145,9 @@ void Coalescence::make_nuclei(const std::string &input_file) {
 
 void Coalescence::coalesce(const std::vector<Particle> &hadrons,
                            std::vector<Nucleus> &nuclei) {
+  std::uniform_real_distribution<double> uniform01(0.0, 1.0);
   nuclei.clear();
-  std::vector<Particle> nucleons, antinucleons;
+  std::vector<Particle> protons, neutrons, antiprotons, antineutrons;
   for (const Particle &hadron : hadrons) {
     // Avoid spectator nucleons. Even if fragmentation of spectators occurs
     // the corresponding nucleons should collide with something.
@@ -152,21 +155,20 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
       continue;
     }
 
-    if (hadron.type == ParticleType::p ||
-        hadron.type == ParticleType::n) {
-      nucleons.push_back(hadron);
-    } else if (hadron.type == ParticleType::p ||
-               hadron.type == ParticleType::n) {
-      antinucleons.push_back(hadron);
+    switch (hadron.type) {
+      case ParticleType::p: protons.push_back(hadron); break;
+      case ParticleType::n: neutrons.push_back(hadron); break;
+      case ParticleType::ap: antiprotons.push_back(hadron); break;
+      case ParticleType::an: antineutrons.push_back(hadron); break;
+      default: ;
     }
   }
-  const size_t N_nucleons = nucleons.size();
-  std::cout << "Trying to combine " << nucleons.size()
-            << " nucleons into deuterons." << std::endl;
-  for (size_t i = 0; i < N_nucleons; i++) {
-    for (size_t j = 0; j < i; j++) {
-      smash::FourVector x1(nucleons[i].origin), x2(nucleons[j].origin),
-                        p1(nucleons[i].momentum), p2(nucleons[j].momentum);
+  std::cout << "Trying to combine " << protons.size() << " protons and "
+            << neutrons.size() << " neutrons into deuterons." << std::endl;
+  for (Particle &proton : protons) {
+    for (Particle &neutron : neutrons) {
+      smash::FourVector x1(proton.origin), x2(neutron.origin),
+                        p1(proton.momentum), p2(neutron.momentum);
       // 1. Boost to the center of mass frame
       const smash::ThreeVector vcm = (p1 + p2).velocity();
       p1 = p1.lorentz_boost(vcm);
@@ -193,21 +195,25 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
         continue;
       }
 
-      // 5. No isospin magic so far - todo.
-      // Simply make a deuteron
+      // 5. Spin average over initial states (* 1/4),
+      //    spin sum over final state (* 3), and
+      //    isospin projection (* 1/2), see DOI: 10.1103/PhysRevC.53.367
+      //   Therfore accept with probability 3/8.
+      if (uniform01(rng_generator_) > 3./8.) {
+        continue;
+      }
 
       /*
-      std::cout << "Combining " << nucleons[i].momentum << " "
-                                << nucleons[i].origin << " "
-                                << nucleons[i].pdg_mother1 << " "
-                                << nucleons[i].pdg_mother2 << " and "
-                                << nucleons[j].momentum << " "
-                                << nucleons[j].origin << " "
-                                << nucleons[j].pdg_mother1 << " "
-                                << nucleons[j].pdg_mother2 << " " << std::endl;
+      std::cout << "Combining " << proton.momentum << " "
+                                << proton.origin << " "
+                                << proton.pdg_mother1 << " "
+                                << proton.pdg_mother2 << " and "
+                                << neutron.momentum << " "
+                                << neutron.origin << " "
+                                << neutron.pdg_mother1 << " "
+                                << neutron.pdg_mother2 << " " << std::endl;
       */
-      nuclei.push_back({nucleons[i].momentum + nucleons[j].momentum,
-                        NucleusType::d});
+      nuclei.push_back({proton.momentum + neutron.momentum, NucleusType::d});
     }
   }
 }

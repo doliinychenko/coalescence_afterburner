@@ -2,6 +2,7 @@
 #define COALESCENCE_H
 
 #include <vector>
+#include <random>
 
 #include "smash/fourvector.h"
 
@@ -47,11 +48,15 @@ class Coalescence {
                 std::vector<Nucleus> &out);
   void make_nuclei(const std::string &input_file);
  private:
+  // random number generation
+  std::random_device random_device_;
+  std::mt19937 rng_generator_;
+
   ParticleType pdg_to_type(int32_t pdg);
   size_t event_number_ = 0;
   FILE *output_;
   // Coalescence parameters
-  const double deuteron_deltap_ = 0.3;  // GeV
+  const double deuteron_deltap_ = 0.28;  // GeV
   const double deuteron_deltax_ = 3.5;  // fm
 };
 
