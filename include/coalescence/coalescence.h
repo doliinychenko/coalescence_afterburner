@@ -4,7 +4,7 @@
 #include <vector>
 #include <random>
 
-#include "smash/fourvector.h"
+#include "coalescence/fourvector.h"
 
 namespace coalescence {
 
@@ -28,15 +28,15 @@ enum class NucleusType : char {
 };
 
 struct Particle {
-  smash::FourVector momentum;  // 4-momentum
-  smash::FourVector origin;    // 4-position of origin
+  FourVector momentum;  // 4-momentum
+  FourVector origin;    // 4-position of origin
   ParticleType type;
   int32_t pdg_mother1;
   int32_t pdg_mother2;
 };
 
 struct Nucleus {
-  smash::FourVector momentum;  // 4-momentum
+  FourVector momentum;  // 4-momentum
   NucleusType type;
 };
 

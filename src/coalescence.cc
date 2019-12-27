@@ -1,4 +1,6 @@
 #include "coalescence/coalescence.h"
+#include "coalescence/threevector.h"
+#include "coalescence/fourvector.h"
 
 #include <algorithm>
 #include <stdio.h>
@@ -118,8 +120,8 @@ void Coalescence::make_nuclei(const std::string &input_file) {
 
       ParticleType hadron_type = pdg_to_type(pdg);
       if (hadron_type != ParticleType::boring) {
-        smash::FourVector r(t, x, y, z), p(p0, px, py, pz);
-        smash::FourVector origin(time_last_coll,
+        FourVector r(t, x, y, z), p(p0, px, py, pz);
+        FourVector origin(time_last_coll,
             r.threevec() - (t - time_last_coll) * p.velocity());
         hadrons.push_back({p, origin, hadron_type, pdg_mother1, pdg_mother2});
         // std::cout << pdg << " " << static_cast<int>(hadron_type) << " "
@@ -132,7 +134,7 @@ void Coalescence::make_nuclei(const std::string &input_file) {
     // Print out nuclei
     fprintf(output_, "# event %lu %lu\n", event_number_, nuclei.size());
     for (const Nucleus &nucleus : nuclei) {
-      const smash::FourVector &p = nucleus.momentum;
+      const FourVector &p = nucleus.momentum;
       fprintf(output_, "%12.8f %12.8f %12.8f %12.8f %d\n",
           p.x0(), p.x1(), p.x2(), p.x3(), static_cast<int>(nucleus.type));
     }
@@ -167,10 +169,10 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
             << neutrons.size() << " neutrons into deuterons." << std::endl;
   for (Particle &proton : protons) {
     for (Particle &neutron : neutrons) {
-      smash::FourVector x1(proton.origin), x2(neutron.origin),
+      FourVector x1(proton.origin), x2(neutron.origin),
                         p1(proton.momentum), p2(neutron.momentum);
       // 1. Boost to the center of mass frame
-      const smash::ThreeVector vcm = (p1 + p2).velocity();
+      const ThreeVector vcm = (p1 + p2).velocity();
       p1 = p1.lorentz_boost(vcm);
       p2 = p2.lorentz_boost(vcm);
       x1 = x1.lorentz_boost(vcm);
@@ -187,7 +189,7 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
 
       // 3. Roll to the time, when the last nucleon was born
       const double tmax = std::max({x1.x0(), x2.x0()});
-      smash::ThreeVector r1 = x1.threevec() + (tmax - x1.x0()) * p1.velocity(),
+      ThreeVector r1 = x1.threevec() + (tmax - x1.x0()) * p1.velocity(),
                          r2 = x2.threevec() + (tmax - x2.x0()) * p2.velocity();
 
       // 4. Check if spatial distance is too large

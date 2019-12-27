@@ -1,7 +1,5 @@
 #include <getopt.h>
 
-#include "smash/stringfunctions.h"
-
 #include "coalescence/coalescence.h"
 
 #include <iostream>
