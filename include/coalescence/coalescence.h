@@ -13,9 +13,11 @@ enum class ParticleType : char {
   p,    // proton
   n,    // neutron
   la,   // lambda
+  sig0, // Sigma0
   ap,   // anti-proton
   an,   // anti-neuton
   ala,  // anti-lambda
+  asig0, // anti-Sigma0
 };
 
 enum class NucleusType : char {
@@ -44,6 +46,8 @@ class Coalescence {
  public:
   Coalescence(const std::string output_file);
   ~Coalescence();
+  bool check_vicinity(const Particle &h1, const Particle &h2, const Particle &h3,
+                      double deltap, double deltar);
   void coalesce(const std::vector<Particle> &in,
                 std::vector<Nucleus> &out);
   void make_nuclei(const std::string &input_file);
