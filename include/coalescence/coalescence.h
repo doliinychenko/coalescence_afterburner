@@ -18,9 +18,6 @@ enum class ParticleType : char {
   an,   // anti-neuton
   ala,  // anti-lambda
   asig0, // anti-Sigma0
-};
-
-enum class NucleusType : char {
   d,     // deuteron
   t,     // triton
   He3,   // Helium-3
@@ -35,21 +32,18 @@ struct Particle {
   ParticleType type;
   int32_t pdg_mother1;
   int32_t pdg_mother2;
-};
-
-struct Nucleus {
-  FourVector momentum;  // 4-momentum
-  NucleusType type;
+  bool valid;
 };
 
 class Coalescence {
  public:
   Coalescence(const std::string output_file);
   ~Coalescence();
-  bool check_vicinity(const Particle &h1, const Particle &h2, const Particle &h3,
+  static FourVector combined_r(const Particle &h1, const Particle &h2);
+  bool check_vicinity(const Particle &h1, const Particle &h2,
                       double deltap, double deltar);
   void coalesce(const std::vector<Particle> &in,
-                std::vector<Nucleus> &out);
+                std::vector<Particle> &out);
   void make_nuclei(const std::string &input_file);
  private:
   // random number generation
@@ -60,7 +54,7 @@ class Coalescence {
   size_t event_number_ = 0;
   FILE *output_;
   // Coalescence parameters
-  const double deuteron_deltap_ = 0.28;  // GeV
+  const double deuteron_deltap_ = 0.33;  // GeV
   const double deuteron_deltax_ = 3.5;  // fm
 };
 

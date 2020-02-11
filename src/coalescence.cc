@@ -87,11 +87,12 @@ void Coalescence::make_nuclei(const std::string &input_file) {
       event_number_++;
       continue;
     }
-    assert(block_type == 'p');
+    if (block_type != 'p') {
+      break;
+    }
     uint32_t n_part_lines;
     std::fread(&n_part_lines, sizeof(std::uint32_t), 1, input);
-    std::vector<Particle> hadrons;
-    std::vector<Nucleus> nuclei;
+    std::vector<Particle> hadrons, nuclei;
     hadrons.clear();
     nuclei.clear();
     for (size_t i = 0; i < n_part_lines; i++) {
@@ -125,7 +126,8 @@ void Coalescence::make_nuclei(const std::string &input_file) {
         FourVector r(t, x, y, z), p(p0, px, py, pz);
         FourVector origin(time_last_coll,
             r.threevec() - (t - time_last_coll) * p.velocity());
-        hadrons.push_back({p, origin, hadron_type, pdg_mother1, pdg_mother2});
+        hadrons.push_back({p, origin, hadron_type,
+                           pdg_mother1, pdg_mother2, true});
         // std::cout << pdg << " " << static_cast<int>(hadron_type) << " "
         //          << r << " " << p << " " << origin << std::endl;
       }
@@ -135,12 +137,11 @@ void Coalescence::make_nuclei(const std::string &input_file) {
 
     // Print out nuclei
     fprintf(output_, "# event %lu %lu\n", event_number_, nuclei.size());
-    for (const Nucleus &nucleus : nuclei) {
+    for (const Particle &nucleus : nuclei) {
       const FourVector &p = nucleus.momentum;
       fprintf(output_, "%12.8f %12.8f %12.8f %12.8f %d\n",
           p.x0(), p.x1(), p.x2(), p.x3(), static_cast<int>(nucleus.type));
     }
-
     // std::cout << "Read in " << n_part_lines << " particles" << std::endl;
   }
   std::cout << event_number_ << " events" <<  std::endl;
@@ -149,55 +150,64 @@ void Coalescence::make_nuclei(const std::string &input_file) {
 
 bool Coalescence::check_vicinity(const Particle &h1,
                                  const Particle &h2,
-                                 const Particle &h3,
                                  double deltap, double deltar) {
-  FourVector x1(h1.origin), x2(h2.origin), x3(h3.origin),
-             p1(h1.momentum), p2(h2.momentum), p3(h3.momentum);
+  FourVector x1(h1.origin), x2(h2.origin),
+             p1(h1.momentum), p2(h2.momentum);
   // 1. Boost to the center of mass frame
-  const ThreeVector vcm = (p1 + p2 + p3).velocity();
+  const ThreeVector vcm = (p1 + p2).velocity();
   p1 = p1.lorentz_boost(vcm);
   p2 = p2.lorentz_boost(vcm);
-  p3 = p3.lorentz_boost(vcm);
   x1 = x1.lorentz_boost(vcm);
   x2 = x2.lorentz_boost(vcm);
-  x3 = x3.lorentz_boost(vcm);
-  if ((p1.threevec() + p2.threevec() + p3.threevec()).sqr() > 1e-12) {
+  if ((p1.threevec() + p2.threevec()).sqr() > 1e-12) {
     std::cout << "Something is wrong with cm frame: "
-              << p1 + p2 + p3 << std::endl;
+              << p1 + p2 << std::endl;
   }
 
   // 2. Check if momentum difference is too large
-  if (p1.abs3() > deltap || p2.abs3() > deltap || p3.abs3() > deltap) {
+  if ((p1.threevec() - p2.threevec()).abs() > deltap) {
     return false;
   }
 
-  // 3. Roll to the time, when the last nucleon was born
-  const double tmax = std::max({x1.x0(), x2.x0(), x3.x0()});
+  // 3. Roll to the time, when the last hadron was born
+  const double tmax = std::max({x1.x0(), x2.x0()});
   ThreeVector r1 = x1.threevec() + (tmax - x1.x0()) * p1.velocity(),
-              r2 = x2.threevec() + (tmax - x2.x0()) * p2.velocity(),
-              r3 = x3.threevec() + (tmax - x3.x0()) * p3.velocity(),
-              rcm = (r1 + r2 + r3) / 3.0;
-  r1 -= rcm;
-  r2 -= rcm;
-  r3 -= rcm;
+              r2 = x2.threevec() + (tmax - x2.x0()) * p2.velocity();
 
   // 4. Check if spatial distance is too large
-  if (r1.abs() > deltar || r2.abs() > deltar || r3.abs() > deltar) {
+  if ((r1 - r2).abs() > deltar) {
+    return false;
+  }
+
+  // 5. Chack if any of these particles was already coalesced earlier
+  if (!h1.valid || !h2.valid) {
     return false;
   }
 
   return true;
 }
 
+FourVector Coalescence::combined_r(const Particle &h1, const Particle &h2) {
+  FourVector x1(h1.origin), x2(h2.origin),
+             p1(h1.momentum), p2(h2.momentum);
+  const double tmax = std::max({x1.x0(), x2.x0()});
+  ThreeVector r1 = x1.threevec() + (tmax - x1.x0()) * p1.velocity(),
+              r2 = x2.threevec() + (tmax - x2.x0()) * p2.velocity();
+  return FourVector(tmax, 0.5 * (r1 + r2));
+}
+
 void Coalescence::coalesce(const std::vector<Particle> &hadrons,
-                           std::vector<Nucleus> &nuclei) {
+                           std::vector<Particle> &nuclei) {
   std::uniform_real_distribution<double> uniform01(0.0, 1.0);
   nuclei.clear();
   std::vector<Particle> protons, neutrons, antiprotons, antineutrons;
   for (const Particle &hadron : hadrons) {
     // Avoid spectator nucleons. Even if fragmentation of spectators occurs
     // the corresponding nucleons should collide with something.
-    if (hadron.pdg_mother1 == 0 && hadron.pdg_mother2 == 0) {
+    // Be careful not to reject nucleons born from hydro, that also have
+    // pdg_mother == 0.
+    if (hadron.pdg_mother1 == 0 && hadron.pdg_mother2 == 0 &&
+        hadron.momentum.x1() == 0.0 && hadron.momentum.x2() == 0) {
       continue;
     }
 
@@ -213,97 +223,67 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
   //          << neutrons.size() << " neutrons into deuterons." << std::endl;
   for (Particle &proton : protons) {
     for (Particle &neutron : neutrons) {
-      FourVector x1(proton.origin), x2(neutron.origin),
-                        p1(proton.momentum), p2(neutron.momentum);
-      // 1. Boost to the center of mass frame
-      const ThreeVector vcm = (p1 + p2).velocity();
-      p1 = p1.lorentz_boost(vcm);
-      p2 = p2.lorentz_boost(vcm);
-      x1 = x1.lorentz_boost(vcm);
-      x2 = x2.lorentz_boost(vcm);
-      if ((p1.threevec() + p2.threevec()).sqr() > 1e-12) {
-        std::cout << "Something is wrong with cm frame: "
-                  << p1 + p2 << std::endl;
-      }
-
-      // 2. Check if momentum difference is too large
-      if ((p1.threevec() - p2.threevec()).abs() > deuteron_deltap_) {
-        continue;
-      }
-
-      // 3. Roll to the time, when the last nucleon was born
-      const double tmax = std::max({x1.x0(), x2.x0()});
-      ThreeVector r1 = x1.threevec() + (tmax - x1.x0()) * p1.velocity(),
-                         r2 = x2.threevec() + (tmax - x2.x0()) * p2.velocity();
-
-      // 4. Check if spatial distance is too large
-      if ((r1 - r2).abs() > deuteron_deltax_) {
-        continue;
-      }
-
-      // 5. Spin average over initial states (* 1/4),
-      //    spin sum over final state (* 3), and
-      //    isospin projection (* 1/2), see DOI: 10.1103/PhysRevC.53.367
-      //   Therfore accept with probability 3/8.
-      if (uniform01(rng_generator_) > 3./8.) {
-        continue;
-      }
-
-      /*
-      std::cout << "Combining " << proton.momentum << " "
-                                << proton.origin << " "
-                                << proton.pdg_mother1 << " "
-                                << proton.pdg_mother2 << " and "
-                                << neutron.momentum << " "
-                                << neutron.origin << " "
-                                << neutron.pdg_mother1 << " "
-                                << neutron.pdg_mother2 << " " << std::endl;
-      */
-      nuclei.push_back({proton.momentum + neutron.momentum, NucleusType::d});
-    }
-  }
-
-  #pragma omp parallel for
-  for (size_t i = 0; i < protons.size(); i++) {
-    for (size_t j = 0; j < neutrons.size(); j++) {
-      for (size_t k = 0; k < j; k++) {
-        if (!check_vicinity(protons[i], neutrons[j], neutrons[k],
-                            deuteron_deltap_ / std::sqrt(3.0),
-                            deuteron_deltax_ / std::sqrt(3.0))) {
-          continue;
-        }
-        // Triton: Spin average over initial states (* 1/8),
-        //         spin sum over final state (* 2),
-        if (uniform01(rng_generator_) > 1./4.) {
-          continue;
-        }
-        nuclei.push_back({protons[i].momentum +
-                          neutrons[j].momentum +
-                          neutrons[k].momentum, NucleusType::t});
+      // Spin average over initial states (* 1/4),
+      // spin sum over final state (* 3), and
+      // isospin projection (* 1/2), see DOI: 10.1103/PhysRevC.53.367
+      // Therfore accept with probability 3/8.
+      if (uniform01(rng_generator_) < 3./8. &&
+          check_vicinity(proton, neutron,
+                         deuteron_deltap_, deuteron_deltax_)) {
+        /*
+        std::cout << "Combining " << proton.momentum << " "
+                                  << proton.origin << " "
+                                  << proton.pdg_mother1 << " "
+                                  << proton.pdg_mother2 << " and "
+                                  << neutron.momentum << " "
+                                  << neutron.origin << " "
+                                  << neutron.pdg_mother1 << " "
+                                  << neutron.pdg_mother2 << " " << std::endl;
+        */
+        proton.valid = false;
+        neutron.valid = false;
+        nuclei.push_back({proton.momentum + neutron.momentum,
+                          combined_r(proton, neutron),
+                          ParticleType::d, 2212, 2112, true});
       }
     }
   }
 
-  #pragma omp parallel for
-  for (size_t i = 0; i < neutrons.size(); i++) {
-    for (size_t j = 0; j < protons.size(); j++) {
-      for (size_t k = 0; k < j; k++) {
-        if (!check_vicinity(neutrons[i], protons[j], protons[k], 
-                            deuteron_deltap_ / std::sqrt(3.0),
-                            deuteron_deltax_ / std::sqrt(3.0))) {
-          continue;
-        }
-        // He3: Spin average over initial states (* 1/8),
-        //           spin sum over final state (* 2),
-        if (uniform01(rng_generator_) > 1./4.) {
-          continue;
-        }
-        nuclei.push_back({neutrons[i].momentum + 
-                          protons[j].momentum + 
-                          protons[k].momentum, NucleusType::He3});
+  std::vector<Particle> deuterons;
+  for (const Particle &nucleus : nuclei) {
+    if (nucleus.type == ParticleType::d) {
+      deuterons.push_back(nucleus);
+    }
+  }
+
+  for (Particle &deuteron : deuterons) {
+    for (Particle &proton : protons) {
+      if (uniform01(rng_generator_) < 1./4. &&
+        check_vicinity(deuteron, proton,
+                       deuteron_deltap_, deuteron_deltax_ * std::sqrt(3.0) / 2.0)) {
+        deuteron.valid = false;
+        proton.valid = false;
+        nuclei.push_back({proton.momentum + deuteron.momentum,
+                          combined_r(proton, deuteron),
+                          ParticleType::He3, 1000010020, 2212, true});
       }
     }
   }
+
+  for (Particle &deuteron : deuterons) {
+    for (Particle &neutron : neutrons) {
+      if (uniform01(rng_generator_) < 1./4. &&
+        check_vicinity(deuteron, neutron,
+                       deuteron_deltap_, deuteron_deltax_ * std::sqrt(3.0) / 2.0)) {
+        deuteron.valid = false;
+        neutron.valid = false;
+        nuclei.push_back({neutron.momentum + deuteron.momentum,
+                          combined_r(neutron, deuteron),
+                          ParticleType::t, 1000010020, 2112, true});
+      }
+    }
+  }
+
 }
 
 }  // namescape coalescence
