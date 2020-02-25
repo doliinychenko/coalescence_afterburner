@@ -72,6 +72,10 @@ void Coalescence::make_nuclei(const std::string &input_file) {
   // std::cout << magic_number << " " << format_version << " "
   //           << format_variant << " " << smash_version << std::endl;
 
+  std::vector<Particle> hadrons, nuclei;
+  hadrons.clear();
+  nuclei.clear();
+ 
   while (true) {
     char block_type;
     if (!std::fread(&block_type, sizeof(char), 1, input)) {
@@ -92,9 +96,6 @@ void Coalescence::make_nuclei(const std::string &input_file) {
     }
     uint32_t n_part_lines;
     std::fread(&n_part_lines, sizeof(std::uint32_t), 1, input);
-    std::vector<Particle> hadrons, nuclei;
-    hadrons.clear();
-    nuclei.clear();
     for (size_t i = 0; i < n_part_lines; i++) {
       double t, x, y, z, m, p0, px, py, pz,
              form_time, xsecfac, time_last_coll;
@@ -132,17 +133,22 @@ void Coalescence::make_nuclei(const std::string &input_file) {
         //          << r << " " << p << " " << origin << std::endl;
       }
     }
-    // All the physics of coalescence happens inside
-    coalesce(hadrons, nuclei);
-
-    // Print out nuclei
-    fprintf(output_, "# event %lu %lu\n", event_number_, nuclei.size());
-    for (const Particle &nucleus : nuclei) {
-      const FourVector &p = nucleus.momentum;
-      fprintf(output_, "%12.8f %12.8f %12.8f %12.8f %d\n",
-          p.x0(), p.x1(), p.x2(), p.x3(), static_cast<int>(nucleus.type));
-    }
     // std::cout << "Read in " << n_part_lines << " particles" << std::endl;
+
+    // All the physics of coalescence happens inside
+    if (true) { // event_number_ % n_events_combined_ == 0) {
+      coalesce(hadrons, nuclei);
+
+      // Print out nuclei
+      fprintf(output_, "# event %lu %lu\n", event_number_, nuclei.size());
+      for (const Particle &nucleus : nuclei) {
+        const FourVector &p = nucleus.momentum;
+        fprintf(output_, "%12.8f %12.8f %12.8f %12.8f %d\n",
+            p.x0(), p.x1(), p.x2(), p.x3(), static_cast<int>(nucleus.type));
+      }
+      hadrons.clear();
+      nuclei.clear();
+    }
   }
   std::cout << event_number_ << " events" <<  std::endl;
   std::fclose(input);
@@ -150,7 +156,8 @@ void Coalescence::make_nuclei(const std::string &input_file) {
 
 bool Coalescence::check_vicinity(const Particle &h1,
                                  const Particle &h2,
-                                 double deltap, double deltar) {
+                                 double deltap) {
+  const double deltar = hbarc / deltap;
   FourVector x1(h1.origin), x2(h2.origin),
              p1(h1.momentum), p2(h2.momentum);
   // 1. Boost to the center of mass frame
@@ -179,7 +186,7 @@ bool Coalescence::check_vicinity(const Particle &h1,
     return false;
   }
 
-  // 5. Chack if any of these particles was already coalesced earlier
+  // 5. Check if any of these particles was already coalesced earlier
   if (!h1.valid || !h2.valid) {
     return false;
   }
@@ -228,9 +235,7 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
       // isospin projection (* 1/2), see DOI: 10.1103/PhysRevC.53.367
       // Therfore accept with probability 3/8.
       if (uniform01(rng_generator_) < 3./8. &&
-          check_vicinity(proton, neutron,
-                         deuteron_deltap_, deuteron_deltax_)) {
-        /*
+          check_vicinity(proton, neutron, deuteron_deltap_)) { /*
         std::cout << "Combining " << proton.momentum << " "
                                   << proton.origin << " "
                                   << proton.pdg_mother1 << " "
@@ -259,8 +264,7 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
   for (Particle &deuteron : deuterons) {
     for (Particle &proton : protons) {
       if (uniform01(rng_generator_) < 1./4. &&
-        check_vicinity(deuteron, proton,
-                       deuteron_deltap_, deuteron_deltax_ * std::sqrt(3.0) / 2.0)) {
+        check_vicinity(deuteron, proton, deuteron_deltap_)) {
         deuteron.valid = false;
         proton.valid = false;
         nuclei.push_back({proton.momentum + deuteron.momentum,
@@ -273,8 +277,7 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
   for (Particle &deuteron : deuterons) {
     for (Particle &neutron : neutrons) {
       if (uniform01(rng_generator_) < 1./4. &&
-        check_vicinity(deuteron, neutron,
-                       deuteron_deltap_, deuteron_deltax_ * std::sqrt(3.0) / 2.0)) {
+        check_vicinity(deuteron, neutron, deuteron_deltap_)) {
         deuteron.valid = false;
         neutron.valid = false;
         nuclei.push_back({neutron.momentum + deuteron.momentum,

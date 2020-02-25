@@ -40,22 +40,25 @@ class Coalescence {
   Coalescence(const std::string output_file);
   ~Coalescence();
   static FourVector combined_r(const Particle &h1, const Particle &h2);
-  bool check_vicinity(const Particle &h1, const Particle &h2,
-                      double deltap, double deltar);
+  bool check_vicinity(const Particle &h1, const Particle &h2, double deltap);
   void coalesce(const std::vector<Particle> &in,
                 std::vector<Particle> &out);
   void make_nuclei(const std::string &input_file);
  private:
+  static constexpr double hbarc = 0.197327053;
+
   // random number generation
   std::random_device random_device_;
   std::mt19937 rng_generator_;
+
+  // Particles from how many events will be used for coalescence
+  const int n_events_combined_ = 1;
 
   ParticleType pdg_to_type(int32_t pdg);
   size_t event_number_ = 0;
   FILE *output_;
   // Coalescence parameters
   const double deuteron_deltap_ = 0.33;  // GeV
-  const double deuteron_deltax_ = 3.5;  // fm
 };
 
 }  // namespace coalescence
