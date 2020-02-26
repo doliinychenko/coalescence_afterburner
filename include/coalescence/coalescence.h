@@ -58,7 +58,7 @@ class Coalescence {
   size_t event_number_ = 0;
   FILE *output_;
   // Coalescence parameters
-  const double deuteron_deltap_ = 0.33;  // GeV
+  const double deuteron_deltap_ = 0.44;  // GeV
 };
 
 }  // namespace coalescence

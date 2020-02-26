@@ -157,7 +157,7 @@ void Coalescence::make_nuclei(const std::string &input_file) {
 bool Coalescence::check_vicinity(const Particle &h1,
                                  const Particle &h2,
                                  double deltap) {
-  const double deltar = hbarc / deltap;
+  const double deltar = 2.0 * M_PI * hbarc / deltap;
   FourVector x1(h1.origin), x2(h2.origin),
              p1(h1.momentum), p2(h2.momentum);
   // 1. Boost to the center of mass frame
