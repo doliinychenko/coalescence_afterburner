@@ -136,7 +136,7 @@ void Coalescence::make_nuclei(const std::string &input_file) {
     // std::cout << "Read in " << n_part_lines << " particles" << std::endl;
 
     // All the physics of coalescence happens inside
-    if (true) { // event_number_ % n_events_combined_ == 0) {
+    if (event_number_ % n_events_combined_ == 0) {
       coalesce(hadrons, nuclei);
 
       // Print out nuclei
