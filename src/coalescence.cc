@@ -55,6 +55,7 @@ void Coalescence::make_nuclei(const std::string &input_file) {
   uint32_t len;
   std::fread(&magic_number[0], 4, 1, input);
   std::fread(&format_version, sizeof(std::uint16_t), 1, input);
+  // std::cout << "SMASH output version " << format_version << std::endl;
   std::fread(&format_variant, sizeof(std::uint16_t), 1, input);
   std::fread(&len, sizeof(std::uint32_t), 1, input);
   std::fread(&smash_version[0], sizeof(char), len, input);
@@ -87,7 +88,9 @@ void Coalescence::make_nuclei(const std::string &input_file) {
       char empty;
       std::fread(&ev, sizeof(std::uint32_t), 1, input);
       std::fread(&impact_parameter, sizeof(double), 1, input);
-      std::fread(&empty, sizeof(char), 1, input);
+      if (format_version > 6) {
+        std::fread(&empty, sizeof(char), 1, input);
+      }
       event_number_++;
       continue;
     }
