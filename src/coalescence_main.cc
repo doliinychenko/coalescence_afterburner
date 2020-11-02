@@ -11,6 +11,8 @@ void usage(const int rc, const std::string &progname) {
   std::printf("\nUsage: %s [option]\n\n", progname.c_str());
   std::printf(
       "  -h, --help              usage information\n\n"
+      "  -p, --dp                coalescence dp [GeV]\n"
+      "  -r, --dr                coalescence dr [fm]\n"
       "  -i, --inputfiles        <list of particle files>\n"
       "                          should be in SMASH extended binary format\n"
       "  -o, --outputfile        output file name, where the nuclei\n"
@@ -28,6 +30,8 @@ int main(int argc, char **argv) {
 
   constexpr option longopts[] = {
       {"help", no_argument, 0, 'h'},
+      {"dp", required_argument, 0, 'p'},
+      {"dr", required_argument, 0, 'r'},
       {"inputfiles", required_argument, 0, 'i'},
       {"outputfile", required_argument, 0, 'o'},
       {nullptr, 0, 0, 0}};
@@ -37,11 +41,20 @@ int main(int argc, char **argv) {
             i2 = full_progname.size();
   const std::string progname = full_progname.substr(i1, i2);
   int opt = 0;
-  while ((opt = getopt_long(argc, argv, "hi:o:",
+  double inputdp = 0.44;  // GeV
+  double inputdr = 2.0 * M_PI * 0.19732 / inputdp;  // fm
+
+  while ((opt = getopt_long(argc, argv, "hi:o:p:r:",
           longopts, nullptr)) != -1) {
     switch (opt) {
       case 'h':
         usage(EXIT_SUCCESS, progname);
+        break;
+      case 'p':
+        inputdp = std::stod(optarg);
+        break;
+      case 'r':
+        inputdr = std::stod(optarg);
         break;
       case 'i':
         {
@@ -74,8 +87,8 @@ int main(int argc, char **argv) {
     std::cout << input_file << " ";
   }
   std::cout << "\nOutput file: " << output_file << std::endl;
-
-  Coalescence coalescence(output_file);
+  std::cout << "\n dp = " << inputdp << ", dr =  " << inputdr << std::endl;
+  Coalescence coalescence(output_file, inputdp, inputdr);
   for (const std::string &input_file : input_files) {
     coalescence.make_nuclei(input_file);
   }
