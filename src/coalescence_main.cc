@@ -13,6 +13,7 @@ void usage(const int rc, const std::string &progname) {
       "  -h, --help              usage information\n\n"
       "  -p, --dp                coalescence dp [GeV]\n"
       "  -r, --dr                coalescence dr [fm]\n"
+      "  -w, --probabilistic     probabilistic coalescence, 3 exp(-dr2/d2 - dp2 * d2)\n"
       "  -i, --inputfiles        <list of particle files>\n"
       "                          should be in SMASH extended binary format\n"
       "  -o, --outputfile        output file name, where the nuclei\n"
@@ -32,6 +33,7 @@ int main(int argc, char **argv) {
       {"help", no_argument, 0, 'h'},
       {"dp", required_argument, 0, 'p'},
       {"dr", required_argument, 0, 'r'},
+      {"probabilistic", no_argument, 0, 'w'},
       {"inputfiles", required_argument, 0, 'i'},
       {"outputfile", required_argument, 0, 'o'},
       {nullptr, 0, 0, 0}};
@@ -43,8 +45,9 @@ int main(int argc, char **argv) {
   int opt = 0;
   double inputdp = 0.44;  // GeV
   double inputdr = 2.0 * M_PI * 0.19732 / inputdp;  // fm
+  bool probabilistic = false;
 
-  while ((opt = getopt_long(argc, argv, "hi:o:p:r:",
+  while ((opt = getopt_long(argc, argv, "hi:o:p:r:w",
           longopts, nullptr)) != -1) {
     switch (opt) {
       case 'h':
@@ -55,6 +58,9 @@ int main(int argc, char **argv) {
         break;
       case 'r':
         inputdr = std::stod(optarg);
+        break;
+      case 'w':
+        probabilistic = true;
         break;
       case 'i':
         {
@@ -87,8 +93,13 @@ int main(int argc, char **argv) {
     std::cout << input_file << " ";
   }
   std::cout << "\nOutput file: " << output_file << std::endl;
-  std::cout << "\n dp = " << inputdp << ", dr =  " << inputdr << std::endl;
-  Coalescence coalescence(output_file, inputdp, inputdr);
+  if (!probabilistic) {
+    std::cout << "\n dp = " << inputdp << ", dr =  " << inputdr << std::endl;
+  } else {
+    std::cout << "Printing out coalescence weights"
+              << " according to deuteron Wigner function." << std::endl;
+  }
+  Coalescence coalescence(output_file, inputdp, inputdr, probabilistic);
   for (const std::string &input_file : input_files) {
     coalescence.make_nuclei(input_file);
   }

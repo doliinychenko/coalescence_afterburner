@@ -11,9 +11,11 @@
 namespace coalescence {
 
 Coalescence::Coalescence(const std::string output_file,
-  double deuteron_deltap, double deuteron_deltar) :
+  double deuteron_deltap, double deuteron_deltar,
+  bool probabilistic) :
     deuteron_deltap_(deuteron_deltap),
-    deuteron_deltar_(deuteron_deltar) {
+    deuteron_deltar_(deuteron_deltar),
+    probabilistic_(probabilistic) {
   output_ = std::fopen(output_file.c_str(), "w");
   if (output_ == NULL) {
     throw std::runtime_error("Can't open file " + output_file);
@@ -57,6 +59,7 @@ void Coalescence::make_nuclei(const std::string &input_file) {
   uint16_t format_version, format_variant;
   uint32_t len;
   std::fread(&magic_number[0], 4, 1, input);
+  magic_number[4] = '\x00';
   std::fread(&format_version, sizeof(std::uint16_t), 1, input);
   // std::cout << "SMASH output version " << format_version << std::endl;
   std::fread(&format_variant, sizeof(std::uint16_t), 1, input);
@@ -64,6 +67,7 @@ void Coalescence::make_nuclei(const std::string &input_file) {
   std::fread(&smash_version[0], sizeof(char), len, input);
 
   if (strcmp(magic_number, "SMSH") != 0) {
+    std::cout << "Magic number = " << magic_number << std::endl;
     throw std::runtime_error(input_file + " is likely not a SMASH binary:" +
                              " magic number does not match ");
   }
@@ -134,7 +138,7 @@ void Coalescence::make_nuclei(const std::string &input_file) {
         FourVector origin(time_last_coll,
             r.threevec() - (t - time_last_coll) * p.velocity());
         hadrons.push_back({p, origin, hadron_type,
-                           pdg_mother1, pdg_mother2, true});
+                           pdg_mother1, pdg_mother2, 1.0, true});
         // std::cout << pdg << " " << static_cast<int>(hadron_type) << " "
         //          << r << " " << p << " " << origin << std::endl;
       }
@@ -143,14 +147,17 @@ void Coalescence::make_nuclei(const std::string &input_file) {
 
     // All the physics of coalescence happens inside
     if (event_number_ % n_events_combined_ == 0) {
-      coalesce(hadrons, nuclei);
-
+      if (!probabilistic_) {
+        coalesce(hadrons, nuclei);
+      } else {
+        coalesce_probabilistic(hadrons, nuclei);
+      }
       // Print out nuclei
       fprintf(output_, "# event %lu %lu\n", event_number_, nuclei.size());
       for (const Particle &nucleus : nuclei) {
         const FourVector &p = nucleus.momentum;
-        fprintf(output_, "%12.8f %12.8f %12.8f %12.8f %d\n",
-            p.x0(), p.x1(), p.x2(), p.x3(), static_cast<int>(nucleus.type));
+        fprintf(output_, "%12.8f %12.8f %12.8f %12.8f %d %12.8f\n",
+            p.x0(), p.x1(), p.x2(), p.x3(), static_cast<int>(nucleus.type), nucleus.weight);
       }
       hadrons.clear();
       nuclei.clear();
@@ -201,6 +208,37 @@ bool Coalescence::check_vicinity(const Particle &h1,
   return true;
 }
 
+double Coalescence::get_pair_weight(const Particle &h1,
+                                  const Particle &h2) {
+  FourVector x1(h1.origin), x2(h2.origin),
+             p1(h1.momentum), p2(h2.momentum);
+  // 1. Boost to the center of mass frame
+  const ThreeVector vcm = (p1 + p2).velocity();
+  p1 = p1.lorentz_boost(vcm);
+  p2 = p2.lorentz_boost(vcm);
+  x1 = x1.lorentz_boost(vcm);
+  x2 = x2.lorentz_boost(vcm);
+  if ((p1.threevec() + p2.threevec()).sqr() > 1e-12) {
+    std::cout << "Something is wrong with cm frame: "
+              << p1 + p2 << std::endl;
+  }
+
+  // 2. Get momentum difference, 0.25 because q = |p1-p2|/2
+  const double dp2 = (p1.threevec() - p2.threevec()).sqr() * 0.25;
+
+  // 3. Roll to the time, when the last hadron was born
+  const double tmax = std::max({x1.x0(), x2.x0()});
+  ThreeVector r1 = x1.threevec() + (tmax - x1.x0()) * p1.velocity(),
+              r2 = x2.threevec() + (tmax - x2.x0()) * p2.velocity();
+
+  // 4. Get spatial distance
+  const double dr2 = (r1 - r2).sqr();
+
+  constexpr double d2 = 3.2 * 3.2;  // [fm^2], see 2012.04352
+  return 3.0 * std::exp(- dr2 / d2 - dp2 * d2 / (hbarc * hbarc));
+}
+
+
 FourVector Coalescence::combined_r(const Particle &h1, const Particle &h2) {
   FourVector x1(h1.origin), x2(h2.origin),
              p1(h1.momentum), p2(h2.momentum);
@@ -208,6 +246,47 @@ FourVector Coalescence::combined_r(const Particle &h1, const Particle &h2) {
   ThreeVector r1 = x1.threevec() + (tmax - x1.x0()) * p1.velocity(),
               r2 = x2.threevec() + (tmax - x2.x0()) * p2.velocity();
   return FourVector(tmax, 0.5 * (r1 + r2));
+}
+
+void Coalescence::coalesce_probabilistic(const std::vector<Particle> &hadrons,
+                           std::vector<Particle> &nuclei) {
+  nuclei.clear();
+  std::vector<Particle> nucleons;
+  nucleons.clear();
+
+  for (const Particle &hadron : hadrons) {
+    // Avoid spectator nucleons. Even if fragmentation of spectators occurs
+    // the corresponding nucleons should collide with something.
+    // Be careful not to reject nucleons born from hydro, that also have
+    // pdg_mother == 0.
+    if (hadron.pdg_mother1 == 0 && hadron.pdg_mother2 == 0 &&
+        hadron.momentum.x1() == 0.0 && hadron.momentum.x2() == 0) {
+      continue;
+    }
+
+    switch (hadron.type) {
+      case ParticleType::p: nucleons.push_back(hadron); break;
+      case ParticleType::n: nucleons.push_back(hadron); break;
+      default: ;
+    }
+  }
+  // std::cout << "Trying to combine " << protons.size() << " protons and "
+  //          << neutrons.size() << " neutrons into deuterons." << std::endl;
+  size_t N = nucleons.size();
+  for (size_t i = 0; i < N; i++) {
+    for (size_t j = 0; j < i; j++) {
+      const double w = get_pair_weight(nucleons[i], nucleons[j]);
+      if (w < 1e-6) {
+        continue;
+      }
+      nuclei.push_back({nucleons[i].momentum + nucleons[j].momentum,
+                        combined_r(nucleons[i], nucleons[j]),
+                        ParticleType::d, static_cast<int>(nucleons[i].type),
+                        static_cast<int>(nucleons[j].type), w, true});
+    }
+  }
+
+
 }
 
 void Coalescence::coalesce(const std::vector<Particle> &hadrons,
@@ -256,7 +335,7 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
         neutron.valid = false;
         nuclei.push_back({proton.momentum + neutron.momentum,
                           combined_r(proton, neutron),
-                          ParticleType::d, 2212, 2112, true});
+                          ParticleType::d, 2212, 2112, 1.0, true});
       }
     }
   }
@@ -276,7 +355,7 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
         proton.valid = false;
         nuclei.push_back({proton.momentum + deuteron.momentum,
                           combined_r(proton, deuteron),
-                          ParticleType::He3, 1000010020, 2212, true});
+                          ParticleType::He3, 1000010020, 2212, 1.0, true});
       }
     }
   }
@@ -289,7 +368,7 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
         neutron.valid = false;
         nuclei.push_back({neutron.momentum + deuteron.momentum,
                           combined_r(neutron, deuteron),
-                          ParticleType::t, 1000010020, 2112, true});
+                          ParticleType::t, 1000010020, 2112, 1.0, true});
       }
     }
   }

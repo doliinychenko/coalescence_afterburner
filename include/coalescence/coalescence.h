@@ -32,18 +32,23 @@ struct Particle {
   ParticleType type;
   int32_t pdg_mother1;
   int32_t pdg_mother2;
+  double weight;
   bool valid;
 };
 
 class Coalescence {
  public:
   Coalescence(const std::string output_file,
-              double deuteron_deltap, double deuteron_deltar);
+              double deuteron_deltap, double deuteron_deltar,
+              bool probabilistic);
   ~Coalescence();
   static FourVector combined_r(const Particle &h1, const Particle &h2);
   bool check_vicinity(const Particle &h1, const Particle &h2, double deltap, double deltar);
   void coalesce(const std::vector<Particle> &in,
                 std::vector<Particle> &out);
+  void coalesce_probabilistic(const std::vector<Particle> &in,
+                std::vector<Particle> &out);
+  double get_pair_weight(const Particle &h1, const Particle &h2);
   void make_nuclei(const std::string &input_file);
  private:
   static constexpr double hbarc = 0.197327053;
@@ -61,6 +66,7 @@ class Coalescence {
   // Coalescence parameters
   const double deuteron_deltap_ = 0.44;  // GeV
   const double deuteron_deltar_ = 2.0 * M_PI * hbarc / deuteron_deltap_;  // fm
+  const bool probabilistic_;
 };
 
 }  // namespace coalescence
