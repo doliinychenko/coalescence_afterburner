@@ -103,4 +103,5 @@ int main(int argc, char **argv) {
   for (const std::string &input_file : input_files) {
     coalescence.make_nuclei(input_file);
   }
+  coalescence.print_histograms();
 }

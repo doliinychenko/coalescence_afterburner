@@ -22,6 +22,11 @@ Coalescence::Coalescence(const std::string output_file,
   }
   // Initialize random number generator
   rng_generator_.seed(this->random_device_());
+  for (int i = 0; i < y_nbins_; i++) {
+    proton_y_[i] = 0.0;
+    deuteron_y_[i] = 0.0;
+    triton_y_[i] = 0.0;
+  }
 }
 
 Coalescence::~Coalescence() {
@@ -156,14 +161,18 @@ void Coalescence::make_nuclei(const std::string &input_file) {
       fprintf(output_, "# event %lu %lu\n", event_number_, nuclei.size());
       for (const Particle &nucleus : nuclei) {
         const FourVector &p = nucleus.momentum;
+        add_to_histograms(nucleus);
         fprintf(output_, "%12.8f %12.8f %12.8f %12.8f %d %12.8f\n",
             p.x0(), p.x1(), p.x2(), p.x3(), static_cast<int>(nucleus.type), nucleus.weight);
+      }
+      for (const Particle &hadron : hadrons) {
+        add_to_histograms(hadron);
       }
       hadrons.clear();
       nuclei.clear();
     }
   }
-  std::cout << event_number_ << " events" <<  std::endl;
+  // std::cout << event_number_ << " events" <<  std::endl;
   std::fclose(input);
 }
 
@@ -348,7 +357,13 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
   }
 
   for (Particle &deuteron : deuterons) {
+    if (!deuteron.valid) {
+      continue;
+    }
     for (Particle &proton : protons) {
+      if (!proton.valid) {
+        continue;
+      }
       if (uniform01(rng_generator_) < 1./4. &&
         check_vicinity(deuteron, proton, deuteron_deltap_, deuteron_deltar_)) {
         deuteron.valid = false;
@@ -361,7 +376,13 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
   }
 
   for (Particle &deuteron : deuterons) {
+    if (!deuteron.valid) {
+      continue;
+    }
     for (Particle &neutron : neutrons) {
+      if (!neutron.valid) {
+        continue;
+      }
       if (uniform01(rng_generator_) < 1./4. &&
         check_vicinity(deuteron, neutron, deuteron_deltap_, deuteron_deltar_)) {
         deuteron.valid = false;
@@ -373,6 +394,40 @@ void Coalescence::coalesce(const std::vector<Particle> &hadrons,
     }
   }
 
+}
+
+void Coalescence::add_to_histograms(const Particle &part) {
+  if (!part.valid) {
+    return;
+  }
+  const FourVector p = part.momentum;
+  const double y = 0.5 * std::log((p[0] + p[3]) / (p[0] - p[3]));
+  const int i = std::floor((y - y_min_) / (y_max_ - y_min_) * y_nbins_);
+  if (part.type == ParticleType::p) {
+    proton_y_[i] += part.weight;
+  } else if (part.type == ParticleType::d) {
+    deuteron_y_[i] += part.weight;
+  } else if (part.type == ParticleType::t) {
+    triton_y_[i] += part.weight;
+  }
+}
+
+void Coalescence::print_histograms() {
+  const double dy = (y_max_ - y_min_) / y_nbins_;
+  for (int i = 0; i < y_nbins_; i++) {
+    proton_y_[i]   /= (event_number_ * dy);
+    deuteron_y_[i] /= (event_number_ * dy);
+    triton_y_[i]   /= (event_number_ * dy);
+  }
+  printf("#y, dN/dy for p,d,t;  p*t/d^2\n");
+  for (int i = 0; i < y_nbins_; i++) {
+    const double y = y_min_ + (y_max_ - y_min_) / y_nbins_ * (i + 0.5);
+    double ptd2 = 0.0;
+    if (deuteron_y_[i] > 0.0) {
+      ptd2 = proton_y_[i] * triton_y_[i] / deuteron_y_[i] / deuteron_y_[i];
+    }
+    printf("%8.3f %10.1f %10.1f %10.1f %10.4f\n", y, proton_y_[i], deuteron_y_[i], triton_y_[i], ptd2);
+  }
 }
 
 }  // namescape coalescence

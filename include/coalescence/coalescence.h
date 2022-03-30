@@ -50,6 +50,8 @@ class Coalescence {
                 std::vector<Particle> &out);
   double get_pair_weight(const Particle &h1, const Particle &h2);
   void make_nuclei(const std::string &input_file);
+  void add_to_histograms(const Particle &part);
+  void print_histograms();
  private:
   static constexpr double hbarc = 0.197327053;
 
@@ -59,6 +61,11 @@ class Coalescence {
 
   // Particles from how many events will be used for coalescence
   const int n_events_combined_ = 1;
+
+  // Rapidity histograms
+  double y_min_ = -4.0, y_max_ = 4.0;
+  static const int y_nbins_ = 41;
+  std::array<double, y_nbins_> proton_y_, deuteron_y_, triton_y_;
 
   ParticleType pdg_to_type(int32_t pdg);
   size_t event_number_ = 0;
